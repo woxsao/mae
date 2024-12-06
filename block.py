@@ -33,7 +33,7 @@ import torch.utils.checkpoint
 from torch.jit import Final
 
 
-from timm.layers import Mlp, DropPath, use_fused_attn
+from timm.models.layers import Mlp, DropPath
 
 
 __all__ = ['VisionTransformer']  # model_registry will add each entrypoint fn to this
@@ -43,7 +43,7 @@ _logger = logging.getLogger(__name__)
 
 
 class Attention(nn.Module):
-    fused_attn: Final[bool]
+    # fused_attn: Final[bool]
 
     def __init__(
             self,
@@ -60,7 +60,7 @@ class Attention(nn.Module):
         self.num_heads = num_heads
         self.head_dim = dim // num_heads
         self.scale = self.head_dim ** -0.5
-        self.fused_attn = use_fused_attn()
+        # self.fused_attn = use_fused_attn()
 
         self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
         self.q_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
@@ -75,18 +75,18 @@ class Attention(nn.Module):
         q, k, v = qkv.unbind(0)
         q, k = self.q_norm(q), self.k_norm(k)
         res_attn = None
-        if self.fused_attn:
-            x = F.scaled_dot_product_attention(
-                q, k, v,
-                dropout_p=self.attn_drop.p if self.training else 0.,
-            )
-        else:
-            q = q * self.scale
-            attn = q @ k.transpose(-2, -1)
-            attn = attn.softmax(dim=-1)
-            attn = self.attn_drop(attn)
-            x = attn @ v
-            res_attn = attn
+        # if self.fused_attn:
+        #     x = F.scaled_dot_product_attention(
+        #         q, k, v,
+        #         dropout_p=self.attn_drop.p if self.training else 0.,
+        #     )
+        # else:
+        q = q * self.scale
+        attn = q @ k.transpose(-2, -1)
+        attn = attn.softmax(dim=-1)
+        attn = self.attn_drop(attn)
+        x = attn @ v
+        res_attn = attn
 
         x = x.transpose(1, 2).reshape(B, N, C)
         x = self.proj(x)
@@ -152,7 +152,13 @@ class Block(nn.Module):
         self.drop_path2 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
     def forward(self, x: torch.Tensor, return_attention = False) -> torch.Tensor:
-        temp, attn = self.attn(self.norm1(x), return_attention = return_attention)
+        # print("thigns in attention", len(self.attn(self.norm1(x), return_attention = return_attention)))'
+        if return_attention:
+            temp, attn = self.attn(self.norm1(x), return_attention = True)
+        else:
+            temp = self.attn(self.norm1(x))
         x = x + self.drop_path1(self.ls1(temp))
         x = x + self.drop_path2(self.ls2(self.mlp(self.norm2(x))))
-        return x, attn
+        if return_attention:
+            return x, attn
+        return x
